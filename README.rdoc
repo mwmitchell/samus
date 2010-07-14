@@ -30,11 +30,11 @@
     
     desc {
       <<-RDOC
-Use this to blah blah blah.
-
-===JSON Schema
-#{to_json_schema.to_json}
-RDOC
+  Use this to blah blah blah.
+  
+  ===JSON Schema
+  #{to_json_schema.to_json}
+  RDOC
     }
     
     one :name, String do
