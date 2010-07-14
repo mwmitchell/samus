@@ -156,6 +156,7 @@ module Samus
     
   end
   
+  # used to describe a model class (not instance)
   module Descriptable
     
     def to_rdoc level=0
@@ -174,31 +175,40 @@ module Samus
       rdoc.join("\n")
     end
     
+    # TODO: refactor this
     def to_hash
       self.property_types.inject({}) do |hash,p|
         case p.mapped_type.to_s.split("::")[-1]
         when "StringType"
-          hash.merge! p.name.to_s => "<string>"
+          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<string>"] : "string"
+          hash.merge! p.name.to_s => v
         when "IntegerType"
-          hash.merge! p.name.to_s => "<integer>"
+          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<integer>"] : "integer"
+          hash.merge! p.name.to_s => v
         when "BooleanType"
-          hash.merge! p.name.to_s => "<boolean>"
+          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<boolean>"] : "boolean"
+          hash.merge! p.name.to_s => v
         when "NumericType"
-          hash.merge! p.name.to_s => "<number>"
+          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<number>"] : "number"
+          hash.merge! p.name.to_s => v
         when "ArrayType"
-          hash.merge! p.name.to_s => "[<string>]"
+          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<array>"] : "array"
+          hash.merge! p.name.to_s => v
         else
           if p.class == Samus::PropertyTypes::One
-            hash.merge! p.name => p.mapped_type.to_uri
+            hash.merge! p.name => p.mapped_type.to_hash
           else
-            #hash.merge! p.name => p.mapped_type.to_uri
+            hash.merge! p.name => [p.mapped_type.to_hash]
           end
         end
         hash
       end
     end
     
-    # TODO: provide a way to skip the description
+    # TODO: need to find a way to use rdoc, but not use the
+    # desc/description field -- the description might want
+    # to use the to_json_schema method, which results in
+    # infinite recursion... 
     def to_json_schema
       {
         "type" => "object",
@@ -224,6 +234,7 @@ module Samus
     end
   end
   
+  # used on instance of Model objects
   module Serializable
     def to_hash
       property_types.inject({}) do |hash,(name,p)|
