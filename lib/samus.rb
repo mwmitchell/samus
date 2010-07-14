@@ -232,6 +232,12 @@ module Samus
         end
       }
     end
+    
+    # TODO: actually implement
+    def to_protocol_buffers
+      
+    end
+    
   end
   
   # used on instance of Model objects
@@ -265,6 +271,8 @@ module Samus
     
     attr_reader :values
     
+    # TODO: clean this up... there's gotta be a way to push some of this
+    # into the PropertyTypes classes?
     def initialize values = {}
       @values = {}
       m = Module.new
