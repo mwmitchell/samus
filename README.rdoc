@@ -38,7 +38,7 @@
     }
     
     one :name, String do
-      desc "The name of the hotel"
+      desc "The name of the location"
     end
     
     one :polygon, Polygon do
