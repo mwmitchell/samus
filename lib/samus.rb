@@ -8,6 +8,12 @@ module Samus
       
       def self.included base
         base.extend Validatable
+        def label
+        end
+        def simple?
+        end
+        def complex?
+        end
       end
       
       module Validatable
@@ -23,6 +29,8 @@ module Samus
         
       end
     end
+    
+    # todo: add #label, #simple? and #complex? methods to these types
     
     class IntegerType
       include Base
@@ -233,14 +241,27 @@ module Samus
       }
     end
     
-    # TODO: actually implement
+    # TODO: fully implement
+    # TODO: each type should have
+    # a class-level "label" method
+    # which returns a simple string like, "string", "Location", "integer" etc.
+    # TODO: each type should have a method that
+    # returns :simple or :complex,
+    # :simple => "string", "integer", "object"
+    # :complex => "Location", "Origin" etc..
     def to_protocol_buffers
-      
+      pb = "message #{name} {\n"
+      property_types.each_with_index do |pt,i|
+        key = pt.opts[:optional] ? "optional" : "required"
+        type = pt.type.to_s.split("::")[-1]
+        pb << "  #{key} #{pt.name} #{type} = #{i}; // #{pt.description}\n"
+      end
+      pb << "}\n"
     end
     
   end
   
-  # used on instance of Model objects
+  # used on instances of Model objects
   module Serializable
     def to_hash
       property_types.inject({}) do |hash,(name,p)|
