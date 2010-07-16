@@ -220,25 +220,54 @@ module Samus
     def to_json_schema
       {
         "type" => "object",
-        #"description" => self.description,
         "properties" => self.property_types.inject({}) do |hash,p|
-          case p.mapped_type.to_s.split("::")[-1]
-          when "StringType"
-            hash.merge! p.name.to_s => {"type" => "string"}
-          when "IntegerType"
-            hash.merge! p.name.to_s => {"type" => "integer"}
-          when "BooleanType"
-            hash.merge! p.name.to_s => {"type" => "boolean"}
-          when "NumericType"
-            hash.merge! p.name.to_s => {"type" => "number"}
-          when "ArrayType"
-            hash.merge! p.name.to_s => {"type" => "array"}
+
+          if p.is_a? PropertyTypes::Many
+            if (s = scalar_type(p.mapped_type.to_s.split("::")[-1]))
+              val = s
+            else
+              val = p.mapped_type.to_json_schema
+            end
+            
+            subhash = {
+              'type' => "array"
+            }
+            if p.mapped_type.respond_to?(:to_json_schema)
+              subhash["items"] = p.mapped_type.to_json_schema
+            else
+              subhash["items"] = {}
+              subhash["items"]['type'] = val
+            end
+
+            hash.merge!(p.name.to_s => subhash)
+            hash
           else
-            hash.merge! p.name.to_s => p.mapped_type.to_json_schema
+            if (s = scalar_type(p.mapped_type.to_s.split("::")[-1]))
+              hash.merge! p.name.to_s => {"type" => s}
+            else
+              hash.merge! p.name.to_s => p.mapped_type.to_json_schema
+            end
           end
           hash
         end
       }
+    end
+
+    def scalar_type(the_type)
+      case the_type
+      when "StringType"
+        'string'
+      when "IntegerType"
+        'integer'
+      when "BooleanType"
+        'boolean'
+      when "NumericType"
+        'number'
+      when "ArrayType"
+        'array'
+      else
+        nil
+      end
     end
     
     # TODO: fully implement
