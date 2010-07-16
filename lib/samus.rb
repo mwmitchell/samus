@@ -2,72 +2,42 @@ module Samus
   
   module DataTypes
     
-    TypeError = Class.new RuntimeError
-    
-    module Base
-      
-      def self.included base
-        base.extend Validatable
-        def label
-        end
-        def simple?
-        end
-        def complex?
-        end
+    module Descriptable
+      attr_reader :label, :valid_data_types
+      def valid_data_types *values
+        @valid_data_types = values
       end
-      
-      module Validatable
-        
-        def validate_type! value, targets
-          raise TypeError.new("#{value.inspect} is not a #{targets.join(', or ')}") unless 
-            targets.include?(value.class)
-        end
-        
-        def validate! value, opts
-          validate_type! value, [Hash, self]
-        end
-        
+      def simple?
+        label == "object" ? false : true
+      end
+      def label
+        self.to_s.split("::")[-1].sub(/Type$/,'').downcase
       end
     end
     
-    # todo: add #label, #simple? and #complex? methods to these types
-    
     class IntegerType
-      include Base
-      def self.validate! value, opts
-        validate_type! value, [Integer, Fixnum]
-      end
+      extend Descriptable
+      valid_data_types Integer, Fixnum
     end
     
     class NumericType
-      include Base
-      def self.validate! value, opts
-        validate_type! value, [Integer, Float, Fixnum, Numeric]
-      end
+      extend Descriptable
+      valid_data_types Integer, Float, Fixnum, Numeric
     end
     
     class StringType
-      include Base
-      def self.validate! value, opts
-        validate_type! value, [String]
-      end
+      extend Descriptable
+      valid_data_types String
     end
     
     class BooleanType
-      include Base
-      def self.validate! value, opts
-        validate_type! value, [TrueClass, FalseClass]
-      end
+      extend Descriptable
+      valid_data_types TrueClass, FalseClass
     end
     
     class ArrayType
-      include Base
-      def self.validate! value, opts
-        validate_type! value, [Array]
-        value.each do |v|
-          validate_type! v, [opts[:contains]]
-        end if opts[:contains]
-      end
+      extend Descriptable
+      valid_data_types Array
     end
     
     # alias these here so the model definitions
@@ -75,8 +45,8 @@ module Samus
     Boolean = BooleanType
     Number = NumericType
     
-    # The mapping of dsl/external classes to internal "type" classes
-    Map = {
+    # The mapping of dsl/external classes to internal scalar type classes
+    SimpleTypes = {
       Number => NumericType,
       String => StringType,
       Boolean => BooleanType,
@@ -84,74 +54,83 @@ module Samus
       Array => ArrayType
     }
     
-    # pass in the Ruby type and #match
-    # will return the internal Samus type
+    # Returns the internal Samus type if found in the Map
+    # hash above, or returns the custom model class,
+    # which should be including the Samus::Model module.
     def self.match input
-      Map[input] || (
+      SimpleTypes[input] || (
         input.ancestors.include?(Samus::Model) ? 
           input : 
-          raise("The #{input} type does not look like a valid property type class.")
+          raise("The #{input} type does not look like a valid field type class.")
       )
     end
   end
   
-  module PropertyTypes
-    
-    FieldMissingError = Class.new RuntimeError
+  module Fields
     
     class Base
       
-      attr_reader :model, :name, :type, :opts, :mapped_type, :description
+      attr_reader :model, :name, :type_class, :opts, :mapped_type_class, :description
       
-      def initialize model, name, type, opts, &block
-        @model, @name, @type, @opts = model, name, type, opts
-        @mapped_type = DataTypes.match type
+      def initialize model, name, type_class, opts, &block
+        @model, @name, @type_class, @opts = model, name, type_class, opts
+        @mapped_type_class = DataTypes.match type_class
         instance_eval &block if block_given?
+      end
+      
+      def simple?
+        mapped_type_class.simple?
+      end
+      
+      def label
+        simple? ? mapped_type_class.label : "object"
+      end
+      
+      def many?
+        false
+      end
+      
+      def one?
+        false
       end
       
       def desc text
         @description = text
       end
       
-      # returns the correct value if validation passes
-      def prepare_value! value
+      # returns the correct value for a field
+      def prepare_value value
         return if value.nil? and opts[:optional] == true
-        raise FieldMissingError.new("#{model} :#{name} is required") if value.nil?
-        begin
-          mapped_type.validate! value, opts
-        rescue DataTypes::TypeError
-          raise DataTypes::TypeError.new("#{$!} for #{model} :#{name}")
-        end
-        if DataTypes::Map[type]
-          # working with core type (String, Float etc..)
-          value
-        else
-          # working with custom object
-          type.new value
-        end
+        simple? ? value : mapped_type_class.new(value)
       end
       
     end
     
     class One < Base
-      
+      def one?
+        true
+      end
     end
     
     class Many < Base
-    
+      def many?
+        true
+      end
     end
     
   end
   
+  # You model will extend this module when including Samus::Model.
+  # The methods will be available at the class-level.
   module DSL
-    def property_types
-      @property_types ||= []
+    def field_types
+      @field_types ||= []
     end
     def one name, type, opts = {}, &block
-      property_types << PropertyTypes::One.new(self, name, type, opts, &block)
+      field_types << Fields::One.new(self, name, type, opts, &block)
     end
     def many name, type, opts = {}, &block
-      property_types << PropertyTypes::Many.new(self, name, type, opts, &block)
+      field_types << Fields::Many.new(self, name, type, opts, &block)
     end
     
     def description
@@ -164,54 +143,23 @@ module Samus
     
   end
   
-  # used to describe a model class (not instance)
-  module Descriptable
-    
-    def to_rdoc level=0
-      rdoc = ["#{'=' * (level+1)}#{self.to_s.split("::")[-2..-1].join('/')}"]
-      rdoc << self.description.to_s.gsub(/ +/, ' ')
-      rdoc << "====Properties"
-      rdoc << property_types.map{|p|
-        sub = "* #{p.name.to_s}"
-        sub << " (#{p.opts[:optional] ? "optional" : "required"})"
-        sub << "  - #{p.description}\n" if p.description
-        unless DataTypes::Map.values.include? p.mapped_type
-          sub << p.mapped_type.to_rdoc(level+1)
-        end
-        sub
-      }.join("\n")
-      rdoc.join("\n")
-    end
-    
-    # TODO: refactor this
+  module HashSchemable
     def to_hash
-      self.property_types.inject({}) do |hash,p|
-        case p.mapped_type.to_s.split("::")[-1]
-        when "StringType"
-          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<string>"] : "string"
-          hash.merge! p.name.to_s => v
-        when "IntegerType"
-          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<integer>"] : "integer"
-          hash.merge! p.name.to_s => v
-        when "BooleanType"
-          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<boolean>"] : "boolean"
-          hash.merge! p.name.to_s => v
-        when "NumericType"
-          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<number>"] : "number"
-          hash.merge! p.name.to_s => v
-        when "ArrayType"
-          v = p.is_a?(Samus::PropertyTypes::Many) ? ["<array>"] : "array"
-          hash.merge! p.name.to_s => v
+      self.field_types.inject({}) do |hash,p|
+        if p.simple?
+          v = p.is_a?(Samus::Fields::Many) ? [p.label] : p.label
+        elsif p.is_a? Samus::Fields::One
+          v = p.mapped_type_class.to_hash
         else
-          if p.class == Samus::PropertyTypes::One
-            hash.merge! p.name => p.mapped_type.to_hash
-          else
-            hash.merge! p.name => [p.mapped_type.to_hash]
-          end
+          v = [p.mapped_type_class.to_hash]
         end
-        hash
+        hash.merge p.name.to_s => v
       end
     end
+  end
+  
+  # used to describe a model class (not instance)
+  module JsonSchemable
     
     # TODO: need to find a way to use rdoc, but not use the
     # desc/description field -- the description might want
@@ -220,20 +168,19 @@ module Samus
     def to_json_schema
       {
         "type" => "object",
-        "properties" => self.property_types.inject({}) do |hash,p|
-
-          if p.is_a? PropertyTypes::Many
-            if (s = scalar_type(p.mapped_type.to_s.split("::")[-1]))
+        "properties" => self.field_types.inject({}) do |hash,p|
+          if p.is_a? Fields::Many
+            if (s = scalar_type(p.mapped_type_class.to_s.split("::")[-1]))
               val = s
             else
-              val = p.mapped_type.to_json_schema
+              val = p.mapped_type_class.to_json_schema
             end
             
             subhash = {
               'type' => "array"
             }
-            if p.mapped_type.respond_to?(:to_json_schema)
-              subhash["items"] = p.mapped_type.to_json_schema
+            if p.mapped_type_class.respond_to?(:to_json_schema)
+              subhash["items"] = p.mapped_type_class.to_json_schema
             else
               subhash["items"] = {}
               subhash["items"]['type'] = val
@@ -242,10 +189,10 @@ module Samus
             hash.merge!(p.name.to_s => subhash)
             hash
           else
-            if (s = scalar_type(p.mapped_type.to_s.split("::")[-1]))
+            if (s = scalar_type(p.mapped_type_class.to_s.split("::")[-1]))
               hash.merge! p.name.to_s => {"type" => s}
             else
-              hash.merge! p.name.to_s => p.mapped_type.to_json_schema
+              hash.merge! p.name.to_s => p.mapped_type_class.to_json_schema
             end
           end
           hash
@@ -270,31 +217,13 @@ module Samus
       end
     end
     
-    # TODO: fully implement
-    # TODO: each type should have
-    # a class-level "label" method
-    # which returns a simple string like, "string", "Location", "integer" etc.
-    # TODO: each type should have a method that
-    # returns :simple or :complex,
-    # :simple => "string", "integer", "object"
-    # :complex => "Location", "Origin" etc..
-    def to_protocol_buffers
-      pb = "message #{name} {\n"
-      property_types.each_with_index do |pt,i|
-        key = pt.opts[:optional] ? "optional" : "required"
-        type = pt.type.to_s.split("::")[-1]
-        pb << "  #{key} #{pt.name} #{type} = #{i}; // #{pt.description}\n"
-      end
-      pb << "}\n"
-    end
-    
   end
   
   # used on instances of Model objects
   module Serializable
     def to_hash
-      property_types.inject({}) do |hash,(name,p)|
-        if p.mapped_type.ancestors.include? Samus::Model
+      field_types.inject({}) do |hash,(name,p)|
+        if p.mapped_type_class.ancestors.include? Samus::Model
           value = values[p.name]
           if value.is_a? Array
             hash.merge! p.name => values[p.name].map(&:to_hash)
@@ -311,38 +240,52 @@ module Samus
   
   module Model
     
+    # This is just like the DataTypes::Descriptable module....
+    # How to make this smell pretty?
+    module Descriptable
+      def simple?
+        false
+      end
+      def label
+        "object"
+      end
+      def valid_data_types
+        [self]
+      end
+    end
+    
     def self.included base
-      base.extend DSL
-      base.send :include, DataTypes
       base.send :include, Serializable
-      base.extend DataTypes::Base::Validatable
+      base.extend DSL
       base.extend Descriptable
+      base.extend JsonSchemable
+      base.extend HashSchemable
     end
     
     attr_reader :values
     
     # TODO: clean this up... there's gotta be a way to push some of this
-    # into the PropertyTypes classes?
+    # into the Fields classes?
     def initialize values = {}
       @values = {}
       m = Module.new
-      property_types.each_pair do |name, p|
+      field_types.each_pair do |name, p|
         m.module_eval <<-R
           def #{name}
             values[:#{name}]
           end
         R
-        if p.is_a? PropertyTypes::One
+        if p.is_a? Fields::One
           m.module_eval <<-R
             def #{name}= value
-              values[:#{name}] = property_types[:#{name}].prepare_value!(value)
+              values[:#{name}] = field_types[:#{name}].prepare_value(value)
             end
           R
-        elsif p.is_a? PropertyTypes::Many
+        elsif p.is_a? Fields::Many
           m.module_eval <<-R
             def append_to_#{name} value
               values[:#{name}] ||= []
-              values[:#{name}] << property_types[:#{name}].prepare_value!(value)
+              values[:#{name}] << field_types[:#{name}].prepare_value(value)
             end
           R
         end
@@ -352,8 +295,8 @@ module Samus
     end
     
     # returns a hash of property types assigned to this objects class.
-    def property_types
-      @property_types ||= self.class.property_types.inject({}){ |hash,p|
+    def field_types
+      @field_types ||= self.class.field_types.inject({}){ |hash,p|
         hash.merge p.name.to_sym => p
       }
     end
@@ -363,8 +306,8 @@ module Samus
     #  hotel.polygon.coords = [...]
     # then it must be possible outside of #populate etc..
     def populate values
-      property_types.each_pair do |name, p|
-        if p.is_a? PropertyTypes::One
+      field_types.each_pair do |name, p|
+        if p.is_a? Fields::One
           send "#{name}=".to_sym, values[name]
         else
           raise "#{self.class} ##{name} is required, and must be an array when using #populate" unless
