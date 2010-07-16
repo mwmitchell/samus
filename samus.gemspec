@@ -7,26 +7,28 @@ Gem::Specification.new do |s|
   s.name = %q{samus}
   s.version = "1.0.0"
 
-  s.required_rubygems_version = Gem::Requirement.new("> 1.3.1") if s.respond_to? :required_rubygems_version=
+  s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Matt Mitchell"]
-  s.date = %q{2010-07-15}
-  s.description = %q{Samus is a ruby-centric IDL}
+  s.date = %q{2010-07-16}
+  s.description = %q{Ruby-centric IDL}
   s.email = %q{goodieboy@gmail.com}
   s.extra_rdoc_files = [
     "README.rdoc"
   ]
   s.files = [
-     "README.rdoc",
+    "README.rdoc",
      "VERSION",
-     "lib/samus.rb",
+     "lib/samus.rb"
   ]
   s.homepage = %q{http://github.com/mwmitchell/samus}
   s.rdoc_options = ["--charset=UTF-8"]
   s.require_paths = ["lib"]
   s.rubygems_version = %q{1.3.7}
-  s.summary = %q{Samus is a ruby-centric IDL}
+  s.summary = %q{Ruby-centric IDL}
   s.test_files = [
-     "Rakefile",
+    "Rakefile",
+     "tasks/spec.rake",
+     "tasks/rdoc.rake"
   ]
 
   if s.respond_to? :specification_version then
