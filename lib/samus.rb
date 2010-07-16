@@ -168,31 +168,25 @@ module Samus
     def to_json_schema
       {
         "type" => "object",
-        "properties" => self.field_types.inject({}) do |hash,p|
-          if p.is_a? Fields::Many
-            if (s = scalar_type(p.mapped_type_class.to_s.split("::")[-1]))
-              val = s
-            else
-              val = p.mapped_type_class.to_json_schema
-            end
-            
+        "properties" => self.field_types.inject({}) do |hash,field|
+          if field.is_a? Fields::Many
+            val = field.simple? ? field.label : field.mapped_type_class.to_json_schema
             subhash = {
-              'type' => "array"
+              "type" => "array"
             }
-            if p.mapped_type_class.respond_to?(:to_json_schema)
-              subhash["items"] = p.mapped_type_class.to_json_schema
+            unless field.simple?
+              subhash["items"] = field.mapped_type_class.to_json_schema
             else
               subhash["items"] = {}
               subhash["items"]['type'] = val
             end
-
-            hash.merge!(p.name.to_s => subhash)
+            hash.merge!(field.name.to_s => subhash)
             hash
           else
-            if (s = scalar_type(p.mapped_type_class.to_s.split("::")[-1]))
-              hash.merge! p.name.to_s => {"type" => s}
+            if field.simple?
+              hash.merge! field.name.to_s => {"type" => field.label}
             else
-              hash.merge! p.name.to_s => p.mapped_type_class.to_json_schema
+              hash.merge! field.name.to_s => field.mapped_type_class.to_json_schema
             end
           end
           hash
@@ -222,16 +216,16 @@ module Samus
   # used on instances of Model objects
   module Serializable
     def to_hash
-      field_types.inject({}) do |hash,(name,p)|
-        if p.mapped_type_class.ancestors.include? Samus::Model
-          value = values[p.name]
+      field_types.inject({}) do |hash,(name,field)|
+        if field.mapped_type_class.ancestors.include? Samus::Model
+          value = values[field.name]
           if value.is_a? Array
-            hash.merge! p.name => values[p.name].map(&:to_hash)
+            hash.merge! field.name => values[field.name].map(&:to_hash)
           else
-            hash.merge! p.name => values[p.name].to_hash
+            hash.merge! field.name => values[field.name].to_hash
           end
         else
-          hash.merge! p.name => values[p.name]
+          hash.merge! field.name => values[field.name]
         end
         hash
       end
