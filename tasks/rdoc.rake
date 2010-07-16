@@ -1,8 +1,8 @@
 # Rdoc
-desc 'Generate documentation for the rsolr gem.'
+desc 'Generate documentation for the Samus gem.'
 Rake::RDocTask.new(:doc) do |rdoc|
   rdoc.rdoc_dir = 'doc'
-  rdoc.title = 'RSolr'
+  rdoc.title = 'Samus'
   rdoc.options << '--line-numbers' << '--inline-source'
   rdoc.rdoc_files.include('README.rdoc')
   rdoc.rdoc_files.include('lib/**/*.rb')
