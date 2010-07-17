@@ -266,12 +266,7 @@ module Samus
           R
         # it's a many property...
         else
-          m.module_eval <<-R
-            def append_to_#{name} value
-              values[:#{name}] ||= []
-              values[:#{name}] << property_types[:#{name}].prepare_value(value)
-            end
-          R
+          @values[name] ||= []
         end
       end
       extend m
@@ -291,14 +286,15 @@ module Samus
     # then it must be possible outside of #populate etc..
     def populate values
       property_types.each_pair do |name, p|
+        next unless values[name]
         if p.one?
           send "#{name}=".to_sym, values[name]
         else
-          raise "#{self.class} ##{name} is required, and must be an array when using #populate" unless
-            p.opts[:optional] || values[name].is_a?(Array)
+          raise "#{self.class} ##{name} must be an array when using #populate" unless
+            values[name].is_a?(Array)
           values[name].each do |v|
-            raise "#{name} should be populated with a hash, not a #{v.class}" unless v.is_a?(Hash)
-            send "append_to_#{name}", v
+            raise "#{name} should be populated with a Hash or #{p.type_class}, not a #{v.class}" unless [Hash, p.type_class].include?(v.class)
+            send("#{name}") << v
           end
         end
       end

@@ -30,3 +30,9 @@ puts Location.to_hash.inspect
 
 puts JSON.pretty_generate(Location.to_json_schema)
 puts
+
+l = Location.new :name => "Mars", :origins => []
+puts l.name
+l.colors << "red"
+l.colors << 'blue'
+puts l.colors.inspect
