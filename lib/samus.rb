@@ -157,21 +157,18 @@ module Samus
   # used to describe a model class (not instance)
   module Schemable
     
-    # TODO: need to find a way to use rdoc, but not use the
-    # desc/description property -- the description might want
-    # to use the to_json_schema method, which results in
-    # infinite recursion... 
     def to_json_schema
       {
         "type" => "object",
         "properties" => self.property_types.inject({}) do |hash,property|
-          if property.is_a? Properties::Many
-            val = property.simple? ? property.label : property.type_class.to_json_schema
+          type_class = property.type_class
+          if property.many?
+            val = property.simple? ? property.label : type_class.to_json_schema
             subhash = {
               "type" => "array"
             }
             unless property.simple?
-              subhash["items"] = property.type_class.to_json_schema
+              subhash["items"] = type_class.to_json_schema
             else
               subhash["items"] = {}
               subhash["items"]['type'] = val
@@ -182,7 +179,7 @@ module Samus
             if property.simple?
               hash.merge! property.name.to_s => {"type" => property.label}
             else
-              hash.merge! property.name.to_s => property.type_class.to_json_schema
+              hash.merge! property.name.to_s => type_class.to_json_schema
             end
           end
           hash
@@ -193,8 +190,8 @@ module Samus
     def to_hash
       self.property_types.inject({}) do |hash,p|
         if p.simple?
-          v = p.is_a?(Samus::Properties::Many) ? [p.label] : p.label
-        elsif p.is_a? Samus::Properties::One
+          v = p.many? ? [p.label] : p.label
+        elsif p.one?
           v = p.type_class.to_hash
         else
           v = [p.type_class.to_hash]
@@ -294,7 +291,7 @@ module Samus
     # then it must be possible outside of #populate etc..
     def populate values
       property_types.each_pair do |name, p|
-        if p.is_a? Properties::One
+        if p.one?
           send "#{name}=".to_sym, values[name]
         else
           raise "#{self.class} ##{name} is required, and must be an array when using #populate" unless
