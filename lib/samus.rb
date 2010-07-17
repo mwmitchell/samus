@@ -113,7 +113,11 @@ module Samus
       # otherwise the value passed-in is returned.
       def prepare_value value
         return if value.nil? and opts[:optional] == true
-        simple? ? value : type_class.new(value)
+        if simple?
+          value
+        else
+          value.is_a?(type_class) ? value : type_class.new(value)
+        end
       end
       
     end
@@ -207,14 +211,14 @@ module Samus
     def to_hash
       property_types.inject({}) do |hash,(name,property)|
         if property.type_class.ancestors.include? Samus::Model
-          value = values[property.name]
+          value = attributes[property.name]
           if value.is_a? Array
-            hash.merge! property.name => values[property.name].map(&:to_hash)
+            hash.merge! property.name => attributes[property.name].map(&:to_hash)
           else
-            hash.merge! property.name => values[property.name].to_hash
+            hash.merge! property.name => attributes[property.name].to_hash
           end
         else
-          hash.merge! property.name => values[property.name]
+          hash.merge! property.name => attributes[property.name]
         end
         hash
       end
@@ -224,9 +228,11 @@ module Samus
   module Model
     
     def self.included base
+      
       # Serializable provides alternate output format for +instances+ of Model
       base.send :include, Serializable
       
+      # provides the #one and #many methods
       base.extend DSL
       
       # bring the various types (String, Integer, Numeric etc.) into scope:
@@ -236,41 +242,35 @@ module Samus
       base.extend DataTypes::Descriptable
       base.valid_data_types self
       
-      # should change the method setters to regular accessors:
-      # base.valid_data_types = [self]
-      # base.label = "object"
-      # base.simple = false
-      
+      # provides class-level output serialization
       base.extend Schemable
     end
     
-    # the property values for a Model instance
-    attr_reader :values
+    # the property attributes for a Model instance
+    attr_reader :attributes
     
-    # TODO: clean this up... there's gotta be a way to push some of this
-    # into the property classes?
     def initialize values = {}
-      @values = {}
+      @attributes = {}
       m = Module.new
       property_types.each_pair do |name, p|
         m.module_eval <<-R
           def #{name}
-            values[:#{name}]
+            attributes[:#{name}]
           end
         R
         if p.one?
           m.module_eval <<-R
             def #{name}= value
-              values[:#{name}] = property_types[:#{name}].prepare_value(value)
+              attributes[:#{name}] = property_types[:#{name}].prepare_value(value)
             end
           R
         # it's a many property...
         else
-          @values[name] ||= []
+          @attributes[name] ||= []
         end
       end
       extend m
-      populate values
+      self.attributes = values
     end
     
     # returns a hash of property types assigned to this objects class.
@@ -280,21 +280,27 @@ module Samus
       }
     end
     
-    # TODO: move this logic to the module method above...
-    # if you set a many proxy to an array:
-    #  hotel.polygon.coords = [...]
-    # then it must be possible outside of #populate etc..
-    def populate values
-      property_types.each_pair do |name, p|
-        next unless values[name]
-        if p.one?
-          send "#{name}=".to_sym, values[name]
+    PropertyNameError = Class.new(RuntimeError)
+    ManyPropertyAssignmentError = Class.new(RuntimeError)
+    NestedAssignmentError = Class.new(RuntimeError)
+    
+    # accepts a hash where the keys must match the
+    # property_type keys of the model.
+    def attributes= values
+      values.each_pair do |name,value|
+        property_type = property_types[name]
+        raise PropertyNameError.new("#{self.class} does not have a ##{name} property.") unless property_type
+        if property_type.one?
+          send "#{name}=".to_sym, property_type.prepare_value(value)
         else
-          raise "#{self.class} ##{name} must be an array when using #populate" unless
-            values[name].is_a?(Array)
-          values[name].each do |v|
-            raise "#{name} should be populated with a Hash or #{p.type_class}, not a #{v.class}" unless [Hash, p.type_class].include?(v.class)
-            send("#{name}") << v
+          unless value.is_a?(Array)
+            raise ManyPropertyAssignmentError.new("#{self.class} ##{name} must be an array when set via #attributes=")
+          end
+          value.each do |v|
+            unless [Hash, property_type.type_class].include?(v.class)
+              raise NestedAssignmentError.new("#{name} should be populated with a Hash or #{property_type.type_class}, not a #{v.class}")
+            end
+            send("#{name}") << property_type.prepare_value(v)
           end
         end
       end

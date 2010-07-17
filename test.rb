@@ -19,6 +19,8 @@ class Location
   many :origins, Origin
   one :source, Source
   
+  one :time, Number
+  
 end
 
 require 'rubygems'
@@ -31,8 +33,7 @@ puts Location.to_hash.inspect
 puts JSON.pretty_generate(Location.to_json_schema)
 puts
 
-l = Location.new :name => "Mars", :origins => []
+l = Location.new :name => "Mars", :origins => [], :time => 1
 puts l.name
 l.colors << "red"
 l.colors << 'blue'
-puts l.colors.inspect
