@@ -52,7 +52,6 @@ Now that we have a model:
  # class-level
   Location.to_hash
   Location.to_json_schema
-  Location.to_rdoc
   
   # create an instance
   location = Location.new(:name => "Nowhere", :coords => [{:lat => 1.0, :lng =2.0}])
@@ -60,6 +59,3 @@ Now that we have a model:
   location.coords.each do |coord|
     "#{coord.lat}, #{coord.lng}"
   end
-  
-  # type checking... this raises an error because :coords is not valid
-  Location.new(:name => "Blah", :coords => [1])

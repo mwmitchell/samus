@@ -245,6 +245,9 @@ module Samus
       # Serializable provides alternate output format for +instances+ of Model
       base.send :include, Serializable
       base.extend DSL
+      # breing the various types into scope
+      base.send :include, DataTypes
+      # allow the model defs to access the DataTypes::Descriptable methods...
       base.extend DataTypes::Descriptable
       base.valid_data_types self
       base.extend JsonSchemable
