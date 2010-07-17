@@ -78,19 +78,19 @@ module Samus
     
     class Base
       
-      attr_reader :model, :name, :type_class, :opts, :mapped_type_class, :description
+      attr_reader :model, :name, :type_class, :opts, :internal_type_class, :description
       
       def initialize model, name, type_class, opts, &block
         @model, @name, @type_class, @opts = model, name, type_class, opts
-        @mapped_type_class = DataTypes.match type_class
+        @internal_type_class = DataTypes.match type_class
         instance_eval &block if block_given?
       end
       
-      # returns the value of mapped_type_class.simple?
-      def simple?; mapped_type_class.simple? end
+      # returns the value of internal_type_class.simple?
+      def simple?; internal_type_class.simple? end
       
-      # returns the value of mapped_type_class.label
-      def label; mapped_type_class.label end
+      # returns the value of internal_type_class.label
+      def label; internal_type_class.label end
       
       # true/false if this is a +many+ field
       def many?; end
@@ -109,7 +109,7 @@ module Samus
       # otherwise the value passed-in is returned.
       def prepare_value value
         return if value.nil? and opts[:optional] == true
-        simple? ? value : mapped_type_class.new(value)
+        simple? ? value : internal_type_class.new(value)
       end
       
     end
@@ -150,15 +150,15 @@ module Samus
     
   end
   
-  module HashSchemable
+  module Hashemable
     def to_hash
       self.field_types.inject({}) do |hash,p|
         if p.simple?
           v = p.is_a?(Samus::Fields::Many) ? [p.label] : p.label
         elsif p.is_a? Samus::Fields::One
-          v = p.mapped_type_class.to_hash
+          v = p.internal_type_class.to_hash
         else
-          v = [p.mapped_type_class.to_hash]
+          v = [p.internal_type_class.to_hash]
         end
         hash.merge p.name.to_s => v
       end
@@ -177,12 +177,12 @@ module Samus
         "type" => "object",
         "properties" => self.field_types.inject({}) do |hash,field|
           if field.is_a? Fields::Many
-            val = field.simple? ? field.label : field.mapped_type_class.to_json_schema
+            val = field.simple? ? field.label : field.internal_type_class.to_json_schema
             subhash = {
               "type" => "array"
             }
             unless field.simple?
-              subhash["items"] = field.mapped_type_class.to_json_schema
+              subhash["items"] = field.internal_type_class.to_json_schema
             else
               subhash["items"] = {}
               subhash["items"]['type'] = val
@@ -193,29 +193,12 @@ module Samus
             if field.simple?
               hash.merge! field.name.to_s => {"type" => field.label}
             else
-              hash.merge! field.name.to_s => field.mapped_type_class.to_json_schema
+              hash.merge! field.name.to_s => field.internal_type_class.to_json_schema
             end
           end
           hash
         end
       }
-    end
-
-    def scalar_type(the_type)
-      case the_type
-      when "StringType"
-        'string'
-      when "IntegerType"
-        'integer'
-      when "BooleanType"
-        'boolean'
-      when "NumericType"
-        'number'
-      when "ArrayType"
-        'array'
-      else
-        nil
-      end
     end
     
   end
@@ -224,7 +207,7 @@ module Samus
   module Serializable
     def to_hash
       field_types.inject({}) do |hash,(name,field)|
-        if field.mapped_type_class.ancestors.include? Samus::Model
+        if field.internal_type_class.ancestors.include? Samus::Model
           value = values[field.name]
           if value.is_a? Array
             hash.merge! field.name => values[field.name].map(&:to_hash)
@@ -251,7 +234,7 @@ module Samus
       base.extend DataTypes::Descriptable
       base.valid_data_types self
       base.extend JsonSchemable
-      base.extend HashSchemable
+      base.extend Hashemable
     end
     
     # the field values for a Model instance
