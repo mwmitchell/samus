@@ -2,7 +2,7 @@ module Samus
   
   module DataTypes
     
-    # provides the ability for a field value class to describe itself,
+    # provides the ability for a property value class to describe itself,
     # whether it be a +simple+ type (string,integer etc.) or a custom/compound class.
     module Descriptable
       attr_reader :label, :valid_data_types
@@ -65,37 +65,41 @@ module Samus
     # Returns the internal Samus type if found in the Map
     # hash above, or returns the custom model class,
     # which should be including the Samus::Model module.
-    def self.match input
+    def self.resolve input
       SimpleTypes[input] || (
         input.ancestors.include?(Samus::Model) ? 
           input : 
-          raise("The #{input} type does not look like a valid field type class.")
+          raise("The #{input} type does not look like a valid property type class.")
       )
     end
   end
   
-  module Fields
+  module Properties
     
+    # The Properties::Base class is used to defined a property on a model.
+    # This class holds a reference to the model class name, the type class name (String, Integer)
+    # and the smapped type class name (StringType)
+    # If a custom object was used for the field type class,
+    # the type class and mapped class will be the same.
     class Base
       
-      attr_reader :model, :name, :type_class, :opts, :internal_type_class, :description
+      attr_reader :model, :name, :type_class, :opts, :description
       
       def initialize model, name, type_class, opts, &block
         @model, @name, @type_class, @opts = model, name, type_class, opts
-        @internal_type_class = DataTypes.match type_class
         instance_eval &block if block_given?
       end
       
-      # returns the value of internal_type_class.simple?
-      def simple?; internal_type_class.simple? end
+      # returns the value of type_class.simple?
+      def simple?; type_class.simple? end
       
-      # returns the value of internal_type_class.label
-      def label; internal_type_class.label end
+      # returns the value of type_class.label
+      def label; type_class.label end
       
-      # true/false if this is a +many+ field
+      # true/false if this is a +many+ property
       def many?; end
       
-      # true/false if this is a +one+ field
+      # true/false if this is a +one+ property
       def one?; end
       
       # returns the desc value of this class
@@ -103,13 +107,13 @@ module Samus
         @description = text
       end
       
-      # returns the correct value for a field...
+      # returns the correct value for a property...
       # which means... if it's a non-simple type
       # the correct class instance is returned,
       # otherwise the value passed-in is returned.
       def prepare_value value
         return if value.nil? and opts[:optional] == true
-        simple? ? value : internal_type_class.new(value)
+        simple? ? value : type_class.new(value)
       end
       
     end
@@ -128,16 +132,16 @@ module Samus
   # The methods will be available at the class-level.
   module DSL
     
-    def field_types
-      @field_types ||= []
+    def property_types
+      @property_types ||= []
     end
     
     def one name, type, opts = {}, &block
-      field_types << Fields::One.new(self, name, type, opts, &block)
+      property_types << Properties::One.new(self, name, DataTypes.resolve(type), opts, &block)
     end
     
     def many name, type, opts = {}, &block
-      field_types << Fields::Many.new(self, name, type, opts, &block)
+      property_types << Properties::Many.new(self, name, DataTypes.resolve(type), opts, &block)
     end
     
     def description
@@ -150,50 +154,35 @@ module Samus
     
   end
   
-  module Hashemable
-    def to_hash
-      self.field_types.inject({}) do |hash,p|
-        if p.simple?
-          v = p.is_a?(Samus::Fields::Many) ? [p.label] : p.label
-        elsif p.is_a? Samus::Fields::One
-          v = p.internal_type_class.to_hash
-        else
-          v = [p.internal_type_class.to_hash]
-        end
-        hash.merge p.name.to_s => v
-      end
-    end
-  end
-  
   # used to describe a model class (not instance)
-  module JsonSchemable
+  module Schemable
     
     # TODO: need to find a way to use rdoc, but not use the
-    # desc/description field -- the description might want
+    # desc/description property -- the description might want
     # to use the to_json_schema method, which results in
     # infinite recursion... 
     def to_json_schema
       {
         "type" => "object",
-        "properties" => self.field_types.inject({}) do |hash,field|
-          if field.is_a? Fields::Many
-            val = field.simple? ? field.label : field.internal_type_class.to_json_schema
+        "properties" => self.property_types.inject({}) do |hash,property|
+          if property.is_a? Properties::Many
+            val = property.simple? ? property.label : property.type_class.to_json_schema
             subhash = {
               "type" => "array"
             }
-            unless field.simple?
-              subhash["items"] = field.internal_type_class.to_json_schema
+            unless property.simple?
+              subhash["items"] = property.type_class.to_json_schema
             else
               subhash["items"] = {}
               subhash["items"]['type'] = val
             end
-            hash.merge!(field.name.to_s => subhash)
+            hash.merge!(property.name.to_s => subhash)
             hash
           else
-            if field.simple?
-              hash.merge! field.name.to_s => {"type" => field.label}
+            if property.simple?
+              hash.merge! property.name.to_s => {"type" => property.label}
             else
-              hash.merge! field.name.to_s => field.internal_type_class.to_json_schema
+              hash.merge! property.name.to_s => property.type_class.to_json_schema
             end
           end
           hash
@@ -201,21 +190,34 @@ module Samus
       }
     end
     
+    def to_hash
+      self.property_types.inject({}) do |hash,p|
+        if p.simple?
+          v = p.is_a?(Samus::Properties::Many) ? [p.label] : p.label
+        elsif p.is_a? Samus::Properties::One
+          v = p.type_class.to_hash
+        else
+          v = [p.type_class.to_hash]
+        end
+        hash.merge p.name.to_s => v
+      end
+    end
+    
   end
   
   # used on instances of Model objects
   module Serializable
     def to_hash
-      field_types.inject({}) do |hash,(name,field)|
-        if field.internal_type_class.ancestors.include? Samus::Model
-          value = values[field.name]
+      property_types.inject({}) do |hash,(name,property)|
+        if property.type_class.ancestors.include? Samus::Model
+          value = values[property.name]
           if value.is_a? Array
-            hash.merge! field.name => values[field.name].map(&:to_hash)
+            hash.merge! property.name => values[property.name].map(&:to_hash)
           else
-            hash.merge! field.name => values[field.name].to_hash
+            hash.merge! property.name => values[property.name].to_hash
           end
         else
-          hash.merge! field.name => values[field.name]
+          hash.merge! property.name => values[property.name]
         end
         hash
       end
@@ -227,25 +229,33 @@ module Samus
     def self.included base
       # Serializable provides alternate output format for +instances+ of Model
       base.send :include, Serializable
+      
       base.extend DSL
-      # breing the various types into scope
+      
+      # bring the various types (String, Integer, Numeric etc.) into scope:
       base.send :include, DataTypes
+      
       # allow the model defs to access the DataTypes::Descriptable methods...
       base.extend DataTypes::Descriptable
       base.valid_data_types self
-      base.extend JsonSchemable
-      base.extend Hashemable
+      
+      # should change the method setters to regular accessors:
+      # base.valid_data_types = [self]
+      # base.label = "object"
+      # base.simple = false
+      
+      base.extend Schemable
     end
     
-    # the field values for a Model instance
+    # the property values for a Model instance
     attr_reader :values
     
     # TODO: clean this up... there's gotta be a way to push some of this
-    # into the Field classes?
+    # into the property classes?
     def initialize values = {}
       @values = {}
       m = Module.new
-      field_types.each_pair do |name, p|
+      property_types.each_pair do |name, p|
         m.module_eval <<-R
           def #{name}
             values[:#{name}]
@@ -254,15 +264,15 @@ module Samus
         if p.one?
           m.module_eval <<-R
             def #{name}= value
-              values[:#{name}] = field_types[:#{name}].prepare_value(value)
+              values[:#{name}] = property_types[:#{name}].prepare_value(value)
             end
           R
-        # it's a many field...
+        # it's a many property...
         else
           m.module_eval <<-R
             def append_to_#{name} value
               values[:#{name}] ||= []
-              values[:#{name}] << field_types[:#{name}].prepare_value(value)
+              values[:#{name}] << property_types[:#{name}].prepare_value(value)
             end
           R
         end
@@ -272,8 +282,8 @@ module Samus
     end
     
     # returns a hash of property types assigned to this objects class.
-    def field_types
-      @field_types ||= self.class.field_types.inject({}){ |hash,p|
+    def property_types
+      @property_types ||= self.class.property_types.inject({}){ |hash,p|
         hash.merge p.name.to_sym => p
       }
     end
@@ -283,8 +293,8 @@ module Samus
     #  hotel.polygon.coords = [...]
     # then it must be possible outside of #populate etc..
     def populate values
-      field_types.each_pair do |name, p|
-        if p.is_a? Fields::One
+      property_types.each_pair do |name, p|
+        if p.is_a? Properties::One
           send "#{name}=".to_sym, values[name]
         else
           raise "#{self.class} ##{name} is required, and must be an array when using #populate" unless
