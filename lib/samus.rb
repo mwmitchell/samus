@@ -2,6 +2,8 @@ module Samus
   
   module DataTypes
     
+    # provides the ability for a field value class to describe itself,
+    # whether it be a +simple+ type (string,integer etc.) or a custom/compound class.
     module Descriptable
       attr_reader :label, :valid_data_types
       def valid_data_types *values
@@ -11,7 +13,13 @@ module Samus
         label == "object" ? false : true
       end
       def label
-        self.to_s.split("::")[-1].sub(/Type$/,'').downcase
+        @label ||= (
+          if DataTypes::SimpleTypes.values.include? self
+            self.to_s.split("::")[-1].sub(/Type$/,'').downcase
+          else
+            "object"
+          end
+        )
       end
     end
     
@@ -78,27 +86,27 @@ module Samus
         instance_eval &block if block_given?
       end
       
-      def simple?
-        mapped_type_class.simple?
-      end
+      # returns the value of mapped_type_class.simple?
+      def simple?; mapped_type_class.simple? end
       
-      def label
-        simple? ? mapped_type_class.label : "object"
-      end
+      # returns the value of mapped_type_class.label
+      def label; mapped_type_class.label end
       
-      def many?
-        false
-      end
+      # true/false if this is a +many+ field
+      def many?; end
       
-      def one?
-        false
-      end
+      # true/false if this is a +one+ field
+      def one?; end
       
+      # returns the desc value of this class
       def desc text
         @description = text
       end
       
-      # returns the correct value for a field
+      # returns the correct value for a field...
+      # which means... if it's a non-simple type
+      # the correct class instance is returned,
+      # otherwise the value passed-in is returned.
       def prepare_value value
         return if value.nil? and opts[:optional] == true
         simple? ? value : mapped_type_class.new(value)
@@ -107,15 +115,11 @@ module Samus
     end
     
     class One < Base
-      def one?
-        true
-      end
+      def one?; true end
     end
     
     class Many < Base
-      def many?
-        true
-      end
+      def many?; true end
     end
     
   end
@@ -123,12 +127,15 @@ module Samus
   # You model will extend this module when including Samus::Model.
   # The methods will be available at the class-level.
   module DSL
+    
     def field_types
       @field_types ||= []
     end
+    
     def one name, type, opts = {}, &block
       field_types << Fields::One.new(self, name, type, opts, &block)
     end
+    
     def many name, type, opts = {}, &block
       field_types << Fields::Many.new(self, name, type, opts, &block)
     end
@@ -234,32 +241,21 @@ module Samus
   
   module Model
     
-    # This is just like the DataTypes::Descriptable module....
-    # How to make this smell pretty?
-    module Descriptable
-      def simple?
-        false
-      end
-      def label
-        "object"
-      end
-      def valid_data_types
-        [self]
-      end
-    end
-    
     def self.included base
+      # Serializable provides alternate output format for +instances+ of Model
       base.send :include, Serializable
       base.extend DSL
-      base.extend Descriptable
+      base.extend DataTypes::Descriptable
+      base.valid_data_types self
       base.extend JsonSchemable
       base.extend HashSchemable
     end
     
+    # the field values for a Model instance
     attr_reader :values
     
     # TODO: clean this up... there's gotta be a way to push some of this
-    # into the Fields classes?
+    # into the Field classes?
     def initialize values = {}
       @values = {}
       m = Module.new
@@ -269,13 +265,14 @@ module Samus
             values[:#{name}]
           end
         R
-        if p.is_a? Fields::One
+        if p.one?
           m.module_eval <<-R
             def #{name}= value
               values[:#{name}] = field_types[:#{name}].prepare_value(value)
             end
           R
-        elsif p.is_a? Fields::Many
+        # it's a many field...
+        else
           m.module_eval <<-R
             def append_to_#{name} value
               values[:#{name}] ||= []
