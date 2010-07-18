@@ -113,10 +113,11 @@ module Samus
       # otherwise the value passed-in is returned.
       def prepare_value value
         return if value.nil? and opts[:optional] == true
-        if simple?
+        if simple? || value.is_a?(type_class)
           value
         else
-          value.is_a?(type_class) ? value : type_class.new(value)
+          raise "Value #{value.inspect} is not a Hash" unless value.is_a?(Hash)
+          type_class.new value
         end
       end
       
@@ -260,12 +261,15 @@ module Samus
         R
         if p.one?
           m.module_eval <<-R
+            # could raise here.. should only be a hash
+            # or an object of the correct type
             def #{name}= value
               attributes[:#{name}] = property_types[:#{name}].prepare_value(value)
             end
           R
         # it's a many property...
         else
+          # TODO: give this array the ability to check type when appending etc..
           @attributes[name] ||= []
         end
       end
@@ -279,8 +283,8 @@ module Samus
         hash.merge p.name.to_sym => p
       }
     end
-    
-    PropertyNameError = Class.new(RuntimeError)
+
+    InvalidPropertyError = Class.new(RuntimeError)
     ManyPropertyAssignmentError = Class.new(RuntimeError)
     NestedAssignmentError = Class.new(RuntimeError)
     
@@ -289,9 +293,9 @@ module Samus
     def attributes= values
       values.each_pair do |name,value|
         property_type = property_types[name]
-        raise PropertyNameError.new("#{self.class} does not have a ##{name} property.") unless property_type
+        raise InvalidPropertyError.new("#{self.class} does not have a ##{name} property.") unless property_type
         if property_type.one?
-          send "#{name}=".to_sym, property_type.prepare_value(value)
+          send "#{name}=".to_sym, value
         else
           unless value.is_a?(Array)
             raise ManyPropertyAssignmentError.new("#{self.class} ##{name} must be an array when set via #attributes=")
@@ -301,6 +305,26 @@ module Samus
               raise NestedAssignmentError.new("#{name} should be populated with a Hash or #{property_type.type_class}, not a #{v.class}")
             end
             send("#{name}") << property_type.prepare_value(v)
+          end
+        end
+      end
+    end
+    
+    # recursive traverse
+    def traverse &block
+      attributes.each do |name, value|
+        p = property_types[name]
+        if p.one?
+          yield name, value
+          unless p.simple?
+            value.traverse &block
+          end
+        else
+          yield name, value
+          value.each do |vv|
+            unless p.simple?
+              vv.traverse &block
+            end
           end
         end
       end
