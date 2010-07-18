@@ -69,5 +69,7 @@ puts
 location.sub_location_ids << "one"
 
 location.traverse do |name,o|
-  puts "#{name} => #{o.inspect}"
+  puts "#{name}:"
+  puts "#{o.inspect}"
+  puts
 end

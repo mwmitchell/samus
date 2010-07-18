@@ -320,8 +320,8 @@ module Samus
             value.traverse &block
           end
         else
-          yield name, value
           value.each do |vv|
+            yield name, vv
             unless p.simple?
               vv.traverse &block
             end
