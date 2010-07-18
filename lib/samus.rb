@@ -5,13 +5,17 @@ module Samus
     # provides the ability for a property value class to describe itself,
     # whether it be a +simple+ type (string,integer etc.) or a custom/compound class.
     module Descriptable
+      
       attr_reader :label, :valid_data_types
+      
       def valid_data_types *values
         @valid_data_types = values
       end
+      
       def simple?
         label == "object" ? false : true
       end
+      
       def label
         @label ||= (
           if DataTypes::SimpleTypes.values.include? self
@@ -21,6 +25,7 @@ module Samus
           end
         )
       end
+      
     end
     
     class IntegerType
@@ -116,7 +121,9 @@ module Samus
         if simple? || value.is_a?(type_class)
           value
         else
-          raise "Value #{value.inspect} is not a Hash" unless value.is_a?(Hash)
+          unless [Hash, type_class].include?(value.class)
+            raise "#{name} should be populated with a Hash or #{type_class}, not a #{value.class}"
+          end
           type_class.new value
         end
       end
@@ -286,12 +293,12 @@ module Samus
 
     InvalidPropertyError = Class.new(RuntimeError)
     ManyPropertyAssignmentError = Class.new(RuntimeError)
-    NestedAssignmentError = Class.new(RuntimeError)
     
     # accepts a hash where the keys must match the
     # property_type keys of the model.
     def attributes= values
       values.each_pair do |name,value|
+        next if value.nil?
         property_type = property_types[name]
         raise InvalidPropertyError.new("#{self.class} does not have a ##{name} property.") unless property_type
         if property_type.one?
@@ -301,9 +308,6 @@ module Samus
             raise ManyPropertyAssignmentError.new("#{self.class} ##{name} must be an array when set via #attributes=")
           end
           value.each do |v|
-            unless [Hash, property_type.type_class].include?(v.class)
-              raise NestedAssignmentError.new("#{name} should be populated with a Hash or #{property_type.type_class}, not a #{v.class}")
-            end
             send("#{name}") << property_type.prepare_value(v)
           end
         end
