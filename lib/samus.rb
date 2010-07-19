@@ -84,7 +84,7 @@ module Samus
     # the type class and mapped class will be the same.
     class Base
       
-      attr_reader :model, :name, :type_class, :opts, :description
+      attr_reader :model, :name, :type_class, :opts
       
       def initialize model, name, type_class, opts, &block
         @model, @name, @type_class, @opts = model, name, type_class, opts
@@ -104,8 +104,8 @@ module Samus
       def one?; end
       
       # returns the desc value of this class
-      def desc text
-        @description = text
+      def description
+        opts[:desc] || opts[:description]
       end
       
       # returns the correct value for a property...
@@ -140,6 +140,8 @@ module Samus
   # The methods will be available at the class-level.
   module DSL
     
+    attr_reader :description
+    
     def property_types
       @property_types ||= []
     end
@@ -152,12 +154,8 @@ module Samus
       property_types << Properties::Many.new(self, name, DataTypes.resolve(type), opts, &block)
     end
     
-    def description
-      @description ||= @desc_block ? @desc_block.call : ""
-    end
-    
-    def desc &block
-      @desc_block = block
+    def desc text
+      @description = text
     end
     
   end

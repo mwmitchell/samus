@@ -6,44 +6,24 @@ class Location
       
       include Samus::Model
       
-      desc {"The lat/lng values of a polygon point, which describe the area of a location"}
+      desc "The lat/lng values of a polygon point, which describe the area of a location"
       
-      one :lat, Number do
-        desc "The lattitude of the property"
-      end
-      
-      one :lng, Number do
-        desc "The longitude of the property"
-      end
+      one :lat, Number, :desc => "The lattitude of the property"
+      one :lng, Number, :desc => "The longitude of the property"
       
     end
     
     class Polygon
       include Samus::Model
-      many :coords, Coord do
-        desc "\"coords\" is an object which contains many +Coord+ objects"
-      end
+      many :coords, Coord, :desc => "\"coords\" is an object which contains many +Coord+ objects"
     end
     
     include Samus::Model
     
-    desc {
-      <<-RDOC
-  Use this to blah blah blah.
-  
-  ===JSON Schema
-  #{to_json_schema.to_json}
-  RDOC
-    }
+    desc "THe Location description..."
     
-    one :name, String do
-      desc "The name of the location"
-    end
-    
-    one :polygon, Polygon do
-      desc "An object which contains many coordinates"
-    end
-    
+    one :name, String, :desc => "The name of the location"
+    one :polygon, Polygon, :desc => "An object which contains many coordinates"
     many :sub_location_ids, String
     
   end
