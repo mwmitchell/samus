@@ -8,11 +8,9 @@ begin
     gemspec.homepage = "http://github.com/mwmitchell/samus"
     gemspec.authors = ["Matt Mitchell"]
     
-    gemspec.files = FileList['lib/**/*.rb', 'LICENSE', 'README.rdoc', 'CHANGES', 'VERSION']
+    gemspec.files = FileList['lib/**/*.rb', 'LICENSE', 'README.rdoc', 'VERSION']
     
     gemspec.test_files = ['spec/**/*.rb', 'Rakefile', 'tasks/spec.rake', 'tasks/rdoc.rake']
-    
-    gemspec.add_dependency('builder', '>= 2.1.2')
     
     now = Time.now
     gemspec.date = "#{now.year}-#{now.month}-#{now.day}"

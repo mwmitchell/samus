@@ -73,3 +73,7 @@ location.traverse do |name,o|
   puts "#{o.inspect}"
   puts
 end
+
+location = Location.new(:name => "Nowhere")
+location.polygon = {:coords => [{:lat => 1.0, :lng => 2.0}, {:lat => 10.0, :lng => 21.0}]}
+puts location.polygon.coords.first.lat

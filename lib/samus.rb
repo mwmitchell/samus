@@ -6,11 +6,7 @@ module Samus
     # whether it be a +simple+ type (string,integer etc.) or a custom/compound class.
     module Descriptable
       
-      attr_reader :label, :valid_data_types
-      
-      def valid_data_types *values
-        @valid_data_types = values
-      end
+      attr_accessor :label, :valid_data_types
       
       def simple?
         label == "object" ? false : true
@@ -30,27 +26,27 @@ module Samus
     
     class IntegerType
       extend Descriptable
-      valid_data_types Integer, Fixnum
+      self.valid_data_types = [Integer, Fixnum]
     end
     
     class NumericType
       extend Descriptable
-      valid_data_types Integer, Float, Fixnum, Numeric
+      self.valid_data_types = [Integer, Float, Fixnum, Numeric]
     end
     
     class StringType
       extend Descriptable
-      valid_data_types String
+      self.valid_data_types = [String]
     end
     
     class BooleanType
       extend Descriptable
-      valid_data_types TrueClass, FalseClass
+      self.valid_data_types = [TrueClass, FalseClass]
     end
     
     class ArrayType
       extend Descriptable
-      valid_data_types Array
+      self.valid_data_types = [Array]
     end
     
     # alias these here so the model definitions
@@ -122,7 +118,7 @@ module Samus
           value
         else
           unless [Hash, type_class].include?(value.class)
-            raise "#{name} should be populated with a Hash or #{type_class}, not a #{value.class}"
+            raise "#{name} should be populated with a Hash or #{type_class.validate_data_types.join(', ')}, not a #{value.class}"
           end
           type_class.new value
         end
@@ -218,18 +214,30 @@ module Samus
   module Serializable
     def to_hash
       property_types.inject({}) do |hash,(name,property)|
+        value = attributes[property.name]
         if property.type_class.ancestors.include? Samus::Model
-          value = attributes[property.name]
           if value.is_a? Array
-            hash.merge! property.name => attributes[property.name].map(&:to_hash)
+            hash.merge! property.name => value.map(&:to_hash)
           else
-            hash.merge! property.name => attributes[property.name].to_hash
+            hash.merge! property.name => value.to_hash
           end
         else
-          hash.merge! property.name => attributes[property.name]
+          hash.merge! property.name => value
         end
         hash
       end
+    end
+  end
+  
+  class ManyProxy < Array
+    attr_reader :model, :property_name, :property
+    def initialize model, property_name, property
+      @model, @property_name, @property = model, property_name, property
+    end
+    def << value
+      return if value.nil?
+      raise "The #{model.class} ##{property_name} value should only be a #{property.type_class.valid_data_types.join(', ')} - not a #{value.class}" unless property.type_class.valid_data_types.include?(value.class)
+      super value
     end
   end
   
@@ -248,7 +256,7 @@ module Samus
       
       # allow the model defs to access the DataTypes::Descriptable methods...
       base.extend DataTypes::Descriptable
-      base.valid_data_types self
+      base.valid_data_types = [base]
       
       # provides class-level output serialization
       base.extend Schemable
@@ -268,8 +276,6 @@ module Samus
         R
         if p.one?
           m.module_eval <<-R
-            # could raise here.. should only be a hash
-            # or an object of the correct type
             def #{name}= value
               attributes[:#{name}] = property_types[:#{name}].prepare_value(value)
             end
@@ -277,7 +283,7 @@ module Samus
         # it's a many property...
         else
           # TODO: give this array the ability to check type when appending etc..
-          @attributes[name] ||= []
+          @attributes[name] ||= ManyProxy.new(self, name, p)
         end
       end
       extend m
