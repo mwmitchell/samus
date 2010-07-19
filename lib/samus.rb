@@ -103,7 +103,7 @@ module Samus
       # true/false if this is a +one+ property
       def one?; end
       
-      # returns the desc value of this class
+      # returns the :desc/:description option for this field
       def description
         opts[:desc] || opts[:description]
       end
@@ -154,6 +154,7 @@ module Samus
       property_types << Properties::Many.new(self, name, DataTypes.resolve(type), opts, &block)
     end
     
+    # sets the description for this Model
     def desc text
       @description = text
     end
@@ -261,9 +262,10 @@ module Samus
     end
     
     # the property attributes for a Model instance
-    attr_reader :attributes
+    attr_reader :attributes, :errors
     
     def initialize values = {}
+      @errors = []
       @attributes = {}
       m = Module.new
       property_types.each_pair do |name, p|
@@ -315,6 +317,20 @@ module Samus
             send("#{name}") << property_type.prepare_value(v)
           end
         end
+      end
+    end
+    
+    # TODO: implement this
+    # validate should loop through the #property_types
+    # and compare each value in @attributes accordingly.
+    # #validate should use traverse to recursively
+    # validate sub-objects, calling #validate on each.
+    # validate should return true/false
+    def validate
+      errors.clear
+      property_types.each_pair do |name,p|
+        value = attributes[name]
+        # check... is p.opts[:optional] == false, then raise error if value.nil? etc.
       end
     end
     
