@@ -1,5 +1,7 @@
 require 'lib/samus'
 
+# TODO: make this a useful example?
+
 class Location
     
     class Coord
@@ -7,6 +9,8 @@ class Location
       include Samus::Model
       
       desc "The lat/lng values of a polygon point, which describe the area of a location"
+      
+      require 'bigdecimal'
       
       one :lat, Number, :desc => "The lattitude of the property"
       one :lng, Number, :desc => "The longitude of the property"
@@ -20,7 +24,7 @@ class Location
     
     include Samus::Model
     
-    desc "THe Location description..."
+    desc "The Location description..."
     
     one :name, String, :desc => "The name of the location"
     one :polygon, Polygon, :desc => "An object which contains many coordinates"
@@ -53,7 +57,3 @@ location.traverse do |name,o|
   puts "#{o.inspect}"
   puts
 end
-
-location = Location.new(:name => "Nowhere")
-location.polygon = {:coords => [{:lat => 1.0, :lng => 2.0}, {:lat => 10.0, :lng => 21.0}]}
-puts location.polygon.coords.first.lat

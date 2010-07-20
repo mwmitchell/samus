@@ -22,32 +22,47 @@ module Samus
         )
       end
       
-    end
-    
-    class IntegerType
-      extend Descriptable
-      self.valid_data_types = [Integer, Fixnum]
+      def is_valid_type? value
+        valid_data_types.any?{|klass| value.is_a? klass }
+      end
+      
     end
     
     class NumericType
       extend Descriptable
-      self.valid_data_types = [Integer, Float, Fixnum, Numeric]
+      self.valid_data_types = [Numeric]
+      def self.cast value
+        return value if is_valid_type? value
+        value.to_s =~ /\./ ? value.to_f : value.to_i
+      end
     end
     
     class StringType
       extend Descriptable
       self.valid_data_types = [String]
+      def self.cast value
+        return value if is_valid_type? value
+        value.to_s
+      end
     end
     
     class BooleanType
       extend Descriptable
       self.valid_data_types = [TrueClass, FalseClass]
+      def self.cast value
+        return value if is_valid_type? value
+        value.to_s.match(/^(true|t|yes|y|1)$/i) != nil
+      end
     end
     
-    class ArrayType
-      extend Descriptable
-      self.valid_data_types = [Array]
-    end
+    # TODO: change mapping so valid_data_types is external:
+    # MAPPING = {
+    # NumericType => [Numeric],
+    # StringType => [String],
+    # BooleanType => [TrueClass, FalseClass]
+    # }
+    # then the resolve method method could loop through MAPPING
+    # instead of hard-coding type class names...
     
     # alias these here so the model definitions
     # can just use Boolean instead of BooleanType (for example)...
@@ -58,20 +73,20 @@ module Samus
     SimpleTypes = {
       Number => NumericType,
       String => StringType,
-      Boolean => BooleanType,
-      Integer => IntegerType,
-      Array => ArrayType
+      Boolean => BooleanType
     }
     
     # Returns the internal Samus type if found in the Map
     # hash above, or returns the custom model class,
     # which should be including the Samus::Model module.
     def self.resolve input
-      SimpleTypes[input] || (
-        input.ancestors.include?(Samus::Model) ? 
-          input : 
-          raise("The #{input} type does not look like a valid property type class.")
-      )
+      return SimpleTypes[input] if SimpleTypes[input]
+      return input if input.ancestors.include?(Samus::Model)
+      type_class = [NumericType, StringType, BooleanType].find do |type_class|
+        type_class.valid_data_types.any?{|t| input == t || input.ancestors.include?(t) }
+      end
+      return type_class if type_class
+      raise("The #{input} type does not look like a valid property type class.")
     end
   end
   
@@ -115,7 +130,9 @@ module Samus
       def prepare_value value
         return if value.nil? and opts[:optional] == true
         if simple? || value.is_a?(type_class)
-          value
+          # TODO: some "simple" types require special attention (BigDecimal needs a string etc..)
+          # might want to try something like type_class.create(value) ?
+          type_class.cast value
         else
           unless [Hash, type_class].include?(value.class)
             raise "#{name} should be populated with a Hash or #{type_class.validate_data_types.join(', ')}, not a #{value.class}"
@@ -235,8 +252,7 @@ module Samus
     end
     def << value
       return if value.nil?
-      raise "The #{model.class} ##{property_name} value should only be a #{property.type_class.valid_data_types.join(', ')} - not a #{value.class}" unless property.type_class.valid_data_types.include?(value.class)
-      super value
+      super property.prepare_value(value)
     end
   end
   
@@ -275,6 +291,7 @@ module Samus
           end
         R
         if p.one?
+          # TODO: can we mirror the ManyProxy and move this too?
           m.module_eval <<-R
             def #{name}= value
               attributes[:#{name}] = property_types[:#{name}].prepare_value(value)
@@ -282,7 +299,6 @@ module Samus
           R
         # it's a many property...
         else
-          # TODO: give this array the ability to check type when appending etc..
           @attributes[name] ||= ManyProxy.new(self, name, p)
         end
       end
@@ -297,29 +313,31 @@ module Samus
       }
     end
 
-    InvalidPropertyError = Class.new(RuntimeError)
+    NoPropertyError = Class.new(RuntimeError)
     ManyPropertyAssignmentError = Class.new(RuntimeError)
     
-    # accepts a hash where the keys must match the
+    # Populates the @attributes hash.
+    # Accepts a hash where the keys must match the
     # property_type keys of the model.
     def attributes= values
       values.each_pair do |name,value|
         next if value.nil?
         property_type = property_types[name]
-        raise InvalidPropertyError.new("#{self.class} does not have a ##{name} property.") unless property_type
+        raise NoPropertyError.new("#{self.class} does not have a ##{name} property.") unless property_type
         if property_type.one?
-          send "#{name}=".to_sym, value
+          send "#{name}=", value
         else
           unless value.is_a?(Array)
             raise ManyPropertyAssignmentError.new("#{self.class} ##{name} must be an array when set via #attributes=")
           end
           value.each do |v|
-            send("#{name}") << property_type.prepare_value(v)
+            send("#{name}") << v
           end
         end
       end
     end
     
+    # Validates the object, and nested child objects.
     # TODO: implement this
     # validate should loop through the #property_types
     # and compare each value in @attributes accordingly.
@@ -334,7 +352,7 @@ module Samus
       end
     end
     
-    # recursive traverse
+    # yields each name/value pair recursively
     def traverse &block
       attributes.each do |name, value|
         p = property_types[name]
